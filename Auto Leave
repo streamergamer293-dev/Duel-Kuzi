@@ -1,0 +1,202 @@
+-- KUZI HUB v3 | Draggable + NumberBox + ESP + Timer
+if not gethui then gethui = function() return game.CoreGui end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local CONFIG_FILE = "kuzi_hub_config.txt"
+local timerDuration = 5
+local running = false
+local startTime = 0
+local kicked = false
+local ESPObjects = {}
+
+-- Load saved
+if readfile and isfile and isfile(CONFIG_FILE) then
+	local ok, data = pcall(readfile, CONFIG_FILE)
+	if ok then timerDuration = math.clamp(tonumber(data) or 5, 1, 25) end
+end
+
+if not Drawing then warn("[KUZI HUB] No Drawing API") return end
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "KUZI HUB"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = gethui()
+if syn and syn.protect_gui then syn.protect_gui(gui) end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 230)
+frame.Position = UDim2.new(0, 20, 0, 20)
+frame.BackgroundColor3 = Color3.fromRGB(18,18,18)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true -- FULL FRAME DRAGGABLE NOW
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,10)
+
+-- Header
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1,0,0,35)
+header.BackgroundColor3 = Color3.fromRGB(0,255,100)
+header.BorderSizePixel = 0
+header.Parent = frame
+Instance.new("UICorner", header).CornerRadius = UDim.new(0,10)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,1,0)
+title.Text = "KUZI HUB"
+title.TextColor3 = Color3.new(0,0,0)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 18
+title.Parent = header
+
+-- Timer Input 1-25
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1,0,0,20)
+label.Position = UDim2.new(0,0,0,40)
+label.Text = "Leave Timer (1-25s)"
+label.TextColor3 = Color3.new(1,1,1)
+label.BackgroundTransparency = 1
+label.Font = Enum.Font.Gotham
+label.TextSize = 14
+label.Parent = frame
+
+local inputBox = Instance.new("TextBox")
+inputBox.Size = UDim2.new(0.9,0,0,30)
+inputBox.Position = UDim2.new(0.05,0,0,65)
+inputBox.Text = tostring(timerDuration)
+inputBox.TextColor3 = Color3.new(0,0,0)
+inputBox.BackgroundColor3 = Color3.fromRGB(230,230,230)
+inputBox.Font = Enum.Font.GothamBold
+inputBox.TextSize = 16
+inputBox.ClearTextOnFocus = false
+inputBox.Parent = frame
+Instance.new("UICorner", inputBox).CornerRadius = UDim.new(0,6)
+
+inputBox.FocusLost:Connect(function()
+	local num = tonumber(inputBox.Text)
+	if num then
+		timerDuration = math.clamp(math.floor(num), 1, 25)
+		inputBox.Text = tostring(timerDuration)
+	end
+end)
+
+-- Buttons
+local startBtn = Instance.new("TextButton")
+startBtn.Size = UDim2.new(0.9,0,0,32)
+startBtn.Position = UDim2.new(0.05,0,0,105)
+startBtn.Text = "Start Timer"
+startBtn.TextColor3 = Color3.new(0,0,0)
+startBtn.BackgroundColor3 = Color3.fromRGB(0,255,100)
+startBtn.Font = Enum.Font.GothamBold
+startBtn.TextSize = 15
+startBtn.Parent = frame
+Instance.new("UICorner", startBtn).CornerRadius = UDim.new(0,6)
+
+local saveBtn = Instance.new("TextButton")
+saveBtn.Size = UDim2.new(0.9,0,0,32)
+saveBtn.Position = UDim2.new(0.05,0,0,145)
+saveBtn.Text = "Save Setup"
+saveBtn.TextColor3 = Color3.new(1,1,1)
+saveBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+saveBtn.Font = Enum.Font.GothamBold
+saveBtn.TextSize = 15
+saveBtn.Parent = frame
+Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,6)
+
+local toggleESPBtn = Instance.new("TextButton")
+toggleESPBtn.Size = UDim2.new(0.9,0,0,32)
+toggleESPBtn.Position = UDim2.new(0.05,0,0,185)
+toggleESPBtn.Text = "ESP: ON"
+toggleESPBtn.TextColor3 = Color3.new(0,0,0)
+toggleESPBtn.BackgroundColor3 = Color3.fromRGB(0,255,100)
+toggleESPBtn.Font = Enum.Font.GothamBold
+toggleESPBtn.TextSize = 15
+toggleESPBtn.Parent = frame
+Instance.new("UICorner", toggleESPBtn).CornerRadius = UDim.new(0,6)
+
+local espEnabled = true
+
+startBtn.MouseButton1Click:Connect(function()
+	running = true
+	startTime = tick()
+	kicked = false
+	startBtn.Text = "Running: "..timerDuration.."s"
+end)
+
+saveBtn.MouseButton1Click:Connect(function()
+	getgenv().KUZI_Timer = timerDuration
+	if writefile then pcall(writefile, CONFIG_FILE, tostring(timerDuration)) end
+	saveBtn.Text = "Saved!"
+	task.wait(1)
+	saveBtn.Text = "Save Setup"
+end)
+
+toggleESPBtn.MouseButton1Click:Connect(function()
+	espEnabled = not espEnabled
+	toggleESPBtn.Text = "ESP: "..(espEnabled and "ON" or "OFF")
+	toggleESPBtn.BackgroundColor3 = espEnabled and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,60,60)
+end)
+
+-- ESP
+local function createESP(player)
+	if player == LocalPlayer then return end
+	local ok, box = pcall(Drawing.new, "Square")
+	if not ok then return end
+	box.Visible = false
+	box.Color = Color3.fromRGB(0, 255, 100)
+	box.Thickness = 2
+	box.Transparency = 1
+	box.Filled = false
+	ESPObjects[player] = box
+end
+
+local function removeESP(player)
+	if ESPObjects[player] then
+		pcall(function() ESPObjects[player]:Remove() end)
+	ESPObjects[player] = nil
+	end
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do createESP(plr) end
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
+
+-- Main Loop
+RunService.RenderStepped:Connect(function()
+	-- ESP
+	for player, box in pairs(ESPObjects) do
+		if espEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = player.Character.HumanoidRootPart
+			local pos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(hrp.Position)
+			if onScreen then
+				box.Size = Vector2.new(100, 150)
+				box.Position = Vector2.new(pos.X - 50, pos.Y - 75)
+				box.Visible = true
+			else
+				box.Visible = false
+			end
+		else
+			box.Visible = false
+		end
+	end
+	
+	-- Timer
+	if running and not kicked then
+		local elapsed = tick() - startTime
+		startBtn.Text = "Running: "..math.max(0, math.floor(timerDuration - elapsed)).."s"
+		
+		if elapsed >= timerDuration then
+			kicked = true
+			running = false
+			for _, box in pairs(ESPObjects) do pcall(function() box:Remove() end) end
+			LocalPlayer:Kick("[KUZI HUB] Timer hit "..timerDuration.." seconds")
+		end
+	end
+end)
